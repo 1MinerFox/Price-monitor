@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install requests curl_cffi
+      - run: pip install requests curl_cffi beautifulsoup4
 
       - name: Run monitor
         env:
@@ -30,5 +30,5 @@ jobs:
         run: |
           git config user.name "bot"
           git config user.email "bot@users.noreply.github.com"
-          git add state.json
+          git add state_avito.json
           git diff --staged --quiet || (git commit -m "update state" && git push)

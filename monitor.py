@@ -2,9 +2,17 @@ import json
 import os
 import re
 import statistics
+import sys
 from pathlib import Path
 
 import requests
+
+try:  # имитация TLS-отпечатка настоящего Chrome (помогает обходить 403)
+    from curl_cffi import requests as http
+    IMPERSONATE = {"impersonate": "chrome"}
+except ImportError:
+    http = requests
+    IMPERSONATE = {}
 
 # ====== НАСТРОЙКИ ======
 QUERIES = ["iphone 12", "iphone 13", "iphone 14", "iphone 15", "iphone 16", "iphone 17", "iphone air"]
@@ -65,11 +73,22 @@ def send_telegram(text: str) -> None:
 def fetch_offers(query: str) -> list[dict]:
     offers = []
     for page in range(PAGES):
-        r = requests.get(
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
+            "Referer": "https://www.olx.pl/",
+        }
+        if not IMPERSONATE:
+            headers["User-Agent"] = (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+            )
+        r = http.get(
             API,
             params={"query": query, "limit": 50, "offset": page * 50, "sort_by": "created_at:desc"},
-            headers={"User-Agent": "Mozilla/5.0"},
+            headers=headers,
             timeout=30,
+            **IMPERSONATE,
         )
         r.raise_for_status()
         for o in r.json().get("data", []):
@@ -97,10 +116,12 @@ def main() -> None:
     seen = set(state["seen"])
     first_run = len(groups) == 0
     alerts = 0
+    ok_queries = 0
 
     for q in QUERIES:
         try:
             offers = fetch_offers(q)
+            ok_queries += 1
         except Exception as e:
             print(f"[{q}] ошибка: {e}")
             continue
@@ -142,7 +163,9 @@ def main() -> None:
     state["groups"] = groups
     state["seen"] = list(seen)[-5000:]
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-    print(f"Групп: {len(groups)}, уведомлений: {alerts}")
+    print(f"Групп: {len(groups)}, уведомлений: {alerts}, успешных запросов: {ok_queries}/{len(QUERIES)}")
+    if ok_queries == 0:
+        sys.exit(1)  # красный крестик в Actions, если ничего не загрузилось
 
 
 if __name__ == "__main__":
